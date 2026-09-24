@@ -2024,41 +2024,6 @@ const Chat = ({ chatId, user }) => {
     [chatId],
   )
 
-  // Add auto-refresh functionality to periodically check for new messages
-  useEffect(() => {
-    const refreshInterval = setInterval(() => {
-      // Refresh messages from MongoDB
-      if (chatId) {
-        // Fetch latest messages
-        socket.emit("get-latest-messages", { chatId })
-      }
-    }, 100) // Check every 5 seconds
-
-    // Set up listener for latest messages response
-    socket.on("latest-messages-response", (data) => {
-      if (data.chatId !== chatId) return
-
-      // Update messages if there are new ones
-      if (data.messages && data.messages.length > 0) {
-        // Merge new messages with existing ones, avoiding duplicates
-        setMessages((prevMessages) => {
-          const existingIds = new Set(prevMessages.map((msg) => msg._id))
-          const newMessages = data.messages.filter((msg) => !existingIds.has(msg._id))
-
-          if (newMessages.length > 0) {
-            return [...prevMessages, ...newMessages]
-          }
-          return prevMessages
-        })
-      }
-    })
-
-    return () => {
-      clearInterval(refreshInterval)
-      socket.off("latest-messages-response")
-    }
-  }, [chatId, socket])
-
   // Reply message listener
   const replyMessageListener = useCallback(
     (data) => {
