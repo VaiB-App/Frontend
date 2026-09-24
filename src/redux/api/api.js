@@ -161,58 +161,6 @@ const api = createApi({
       invalidatesTags: ["Chat"],
     }),
 
-//     // Add a new endpoint for blocking users
-// blockUser: builder.mutation({
-//   query: ({ userId }) => ({
-//     url: `/user/block/${userId}`,
-//     method: "POST",
-//   }),
-//   invalidatesTags: ["User", "Chat"],
-// }),
-
-//   }),
-
-// // Update the blockUser mutation
-// blockUser: builder.mutation({
-//   query: ({ userId }) => ({
-//     url: `/user/block/${userId}`,
-//     method: 'POST',
-//     credentials: 'include', // Important for sending cookies
-//   }),
-//   invalidatesTags: ['User', 'Chat'],
-// }),
-
-// // Inside your createApi call, add or update this endpoint:
-// blockUser: builder.mutation({
-//   query: (data) => ({
-//     url: `/user/block/${data.userId}`,
-//     method: 'POST',
-//     credentials: 'include',
-//   }),
-//   invalidatesTags: ['User', 'Chat'],
-// }),
-
-// // Add an unblockUser mutation
-// unblockUser: builder.mutation({
-//   query: ({ userId }) => ({
-//     url: `/user/unblock/${userId}`,
-//     method: 'POST',
-//     credentials: 'include',
-//   }),
-//   invalidatesTags: ['User', 'Chat'],
-// }),
-
-// // Add a getBlockedUsers query
-// getBlockedUsers: builder.query({
-//   query: () => ({
-//     url: '/user/blocked',
-//     method: 'GET',
-//     credentials: 'include',
-//   }),
-//   providesTags: ['User'],
-// }),
-// })
-// });
 
 // Block user mutation
 blockUser: builder.mutation({

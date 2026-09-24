@@ -1,220 +1,82 @@
-// import React from 'react';
-// import {
-//   List,
-//   ListItem,
-//   ListItemAvatar,
-//   ListItemText,
-//   Avatar,
-//   Typography,
-//   Button,
-//   Paper,
-//   Box,
-//   Divider,
-//   CircularProgress
-// } from '@mui/material';
-// import { Block as BlockIcon, PersonRemove as PersonRemoveIcon } from '@mui/icons-material';
-// import { useGetBlockedUsersQuery, useUnblockUserMutation } from '../redux/api/api';
-// import toast from 'react-hot-toast';
+import { useState, useEffect } from "react"
+import { Dialog, DialogTitle, DialogContent, List, ListItem, ListItemText, ListItemAvatar, Avatar, Button, Typography, Box } from "@mui/material"
+import { Block as BlockIcon, PersonOff as PersonOffIcon } from "@mui/icons-material"
+import { getSocket } from "../socket"
+import { GET_BLOCKED_USERS, UNBLOCK_USER } from "../constants/events"
+import toast from "react-hot-toast"
 
-// const BlockedUsersList = () => {
-//   const { data: blockedUsers, isLoading, refetch } = useGetBlockedUsersQuery();
-//   const [unblockUser, { isLoading: isUnblocking }] = useUnblockUserMutation();
+const BlockedUsersList = ({ open, onClose }) => {
+  const [blockedUsers, setBlockedUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const socket = getSocket()
 
-//   const handleUnblock = async (userId) => {
-//     try {
-//       const toastId = toast.loading('Unblocking user...');
-//       await unblockUser({ userId });
-//       toast.success('User unblocked successfully', { id: toastId });
-//       refetch();
-//     } catch (error) {
-//       console.error('Unblock error:', error);
-//       toast.error('Failed to unblock user. Please try again.');
-//     }
-//   };
+  useEffect(() => {
+    if (open) {
+      // Request blocked users when dialog opens
+      socket.emit(GET_BLOCKED_USERS)
+      setLoading(true)
 
-//   if (isLoading) {
-//     return (
-//       <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
-//         <CircularProgress />
-//       </Box>
-//     );
-//   }
-
-//   return (
-//     <Paper 
-//       elevation={3} 
-//       sx={{ 
-//         borderRadius: '16px',
-//         overflow: 'hidden',
-//         backgroundColor: 'rgba(255, 255, 255, 0.9)',
-//         backdropFilter: 'blur(10px)',
-//       }}
-//     >
-//       <Box sx={{ p: 2, bgcolor: 'primary.main', color: 'white' }}>
-//         <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-//           <BlockIcon /> Blocked Users
-//         </Typography>
-//       </Box>
-      
-//       <List sx={{ p: 0 }}>
-//         {blockedUsers && blockedUsers.length > 0 ? (
-//           blockedUsers.map((user) => (
-//             <React.Fragment key={user._id}>
-//               <ListItem
-//                 secondaryAction={
-//                   <Button
-//                     variant="outlined"
-//                     color="primary"
-//                     size="small"
-//                     startIcon={<PersonRemoveIcon />}
-//                     onClick={() => handleUnblock(user._id)}
-//                     disabled={isUnblocking}
-//                   >
-//                     Unblock
-//                   </Button>
-//                 }
-//               >
-//                 <ListItemAvatar>
-//                   <Avatar src={user.avatar?.url} alt={user.name}>
-//                     {user.name.charAt(0)}
-//                   </Avatar>
-//                 </ListItemAvatar>
-//                 <ListItemText
-//                   primary={user.name}
-//                   secondary={`@${user.username}`}
-//                 />
-//               </ListItem>
-//               <Divider variant="inset" component="li" />
-//             </React.Fragment>
-//           ))
-//         ) : (
-//           <ListItem>
-//             <ListItemText
-//               primary={
-//                 <Typography align="center" color="text.secondary">
-//                   You haven't blocked any users yet
-//                 </Typography>
-//               }
-//             />
-//           </ListItem>
-//         )}
-//       </List>
-//     </Paper>
-//   );
-// };
-
-// export default BlockedUsersList;
-
-
-
-import React from 'react';
-import {
-  List,
-  ListItem,
-  ListItemAvatar,
-  ListItemText,
-  Avatar,
-  Typography,
-  Button,
-  Paper,
-  Box,
-  Divider,
-  CircularProgress
-} from '@mui/material';
-import { Block as BlockIcon, PersonRemove as PersonRemoveIcon } from '@mui/icons-material';
-import { useGetBlockedUsersQuery, useUnblockUserMutation } from '../redux/api/api';
-import toast from 'react-hot-toast';
-
-const BlockedUsersList = () => {
-  const { data: blockedUsers, isLoading, refetch } = useGetBlockedUsersQuery();
-  const [unblockUser, { isLoading: isUnblocking }] = useUnblockUserMutation();
-
-  const handleUnblock = async (userId) => {
-    try {
-      const toastId = toast.loading('Unblocking user...');
-      const response = await unblockUser({ userId }).unwrap();
-      
-      if (response.success) {
-        toast.success('User unblocked successfully', { id: toastId });
-        refetch();
-      } else {
-        toast.error(response.message || 'Failed to unblock user', { id: toastId });
+      // Listen for response
+      const handleBlockedUsersResponse = (data) => {
+        setBlockedUsers(data.blockedUsers || [])
+        setLoading(false)
       }
-    } catch (error) {
-      console.error('Unblock error:', error);
-      toast.error(error.data?.message || 'Failed to unblock user. Please try again.');
-    }
-  };
 
-  if (isLoading) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
-        <CircularProgress />
-      </Box>
-    );
+      socket.on("blocked-users-response", handleBlockedUsersResponse)
+
+      return () => {
+        socket.off("blocked-users-response", handleBlockedUsersResponse)
+      }
+    }
+  }, [open, socket])
+
+  const handleUnblock = (userId) => {
+    socket.emit(UNBLOCK_USER, { userId })
+    toast.success("User unblocked successfully")
+    // Remove from local state
+    setBlockedUsers(blockedUsers.filter(user => user._id !== userId))
   }
 
   return (
-    <Paper 
-      elevation={3} 
-      sx={{ 
-        borderRadius: '16px',
-        overflow: 'hidden',
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        backdropFilter: 'blur(10px)',
-      }}
-    >
-      <Box sx={{ p: 2, bgcolor: 'primary.main', color: 'white' }}>
-        <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <BlockIcon /> Blocked Users
-        </Typography>
-      </Box>
-      
-      <List sx={{ p: 0 }}>
-        {blockedUsers && blockedUsers.length > 0 ? (
-          blockedUsers.map((user) => (
-            <React.Fragment key={user._id}>
-              <ListItem
-                secondaryAction={
-                  <Button
-                    variant="outlined"
-                    color="primary"
-                    size="small"
-                    startIcon={<PersonRemoveIcon />}
-                    onClick={() => handleUnblock(user._id)}
-                    disabled={isUnblocking}
-                  >
-                    Unblock
-                  </Button>
-                }
-              >
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <BlockIcon />
+        Blocked Users
+      </DialogTitle>
+      <DialogContent>
+        {loading ? (
+          <Typography>Loading blocked users...</Typography>
+        ) : blockedUsers.length === 0 ? (
+          <Box sx={{ textAlign: "center", py: 3 }}>
+            <PersonOffIcon sx={{ fontSize: 60, color: "text.secondary", mb: 2 }} />
+            <Typography variant="body1">You haven't blocked any users yet.</Typography>
+          </Box>
+        ) : (
+          <List>
+            {blockedUsers.map((user) => (
+              <ListItem key={user._id} secondaryAction={
+                <Button 
+                  variant="outlined" 
+                  size="small" 
+                  onClick={() => handleUnblock(user._id)}
+                >
+                  Unblock
+                </Button>
+              }>
                 <ListItemAvatar>
-                  <Avatar src={user.avatar?.url} alt={user.name}>
-                    {user.name.charAt(0)}
-                  </Avatar>
+                  <Avatar>{user.name?.[0] || "U"}</Avatar>
                 </ListItemAvatar>
-                <ListItemText
-                  primary={user.name}
-                  secondary={`@${user.username}`}
+                <ListItemText 
+                  primary={user.name} 
+                  secondary={user.email || "No email available"} 
                 />
               </ListItem>
-              <Divider variant="inset" component="li" />
-            </React.Fragment>
-          ))
-        ) : (
-          <ListItem>
-            <ListItemText
-              primary={
-                <Typography align="center" color="text.secondary">
-                  You haven't blocked any users yet
-                </Typography>
-              }
-            />
-          </ListItem>
+            ))}
+          </List>
         )}
-      </List>
-    </Paper>
-  );
-};
+      </DialogContent>
+    </Dialog>
+  )
+}
 
-export default BlockedUsersList;
+export default BlockedUsersList

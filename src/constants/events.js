@@ -34,6 +34,16 @@ export const CALL_REJECTED = "call-rejected"
 export const ICE_CANDIDATE = "ice-candidate"
 export const END_CALL = "end-call"
 
+export const UNBLOCK_USER = "unblock-user"
+export const GET_BLOCKED_USERS = "get-blocked-users"
+
+export const USER_UNBLOCKED = "user-unblocked"
+export const MESSAGE_FROM_BLOCKED_USER = "message-from-blocked-user"
+
+export const INAPPROPRIATE_CONTENT_DETECTED = "inappropriate-content-detected"
+export const USER_BLOCKED_FOR_INAPPROPRIATE = "user-blocked-for-inappropriate"
+
+
 export {
   MESSAGE_BLOCKED,
   INAPPROPRIATE_MESSAGE,

@@ -14,6 +14,9 @@ const fileFormat = (url = "") => {
     fileExt === "gif"
   )
     return "image";
+    if (fileExt === "pdf") return "pdf";
+if (fileExt === "doc" || fileExt === "docx") return "word";
+
 
   return "file";
 };

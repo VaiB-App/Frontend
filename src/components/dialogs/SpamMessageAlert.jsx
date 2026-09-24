@@ -42,7 +42,7 @@ const SpamMessageAlert = ({ open, onClose, message, sender }) => {
           Ignore
         </Button>
         <Button onClick={handleBlock} variant="contained" color="error">
-          Block User
+        Report and Block User
         </Button>
       </DialogActions>
     </Dialog>

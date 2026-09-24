@@ -1,95 +1,45 @@
-// import { Box, Typography } from "@mui/material";
-// import React, { memo } from "react";
-// import { lightBlue } from "../../constants/color";
-// import moment from "moment";
-// import { fileFormat } from "../../lib/features";
-// import RenderAttachment from "./RenderAttachement.jsx";
-// import { motion } from "framer-motion";
 
-// const MessageComponent = ({ message, user }) => {
-//   const { sender, content, attachments = [], createdAt } = message;
-
-//   const sameSender = sender?._id === user?._id;
-
-//   const timeAgo = moment(createdAt).fromNow();
-
-//   return (
-//     <motion.div
-//       initial={{ opacity: 0, x: "-100%" }}
-//       whileInView={{ opacity: 1, x: 0 }}
-//       style={{
-//         alignSelf: sameSender ? "flex-end" : "flex-start",
-//         color: "white",
-//         borderRadius: "5px",
-//         padding:"0.5rem",
-//         marginTop: "1rem",
-//         width: "fit-content",
-//         backdropFilter: "blur(1.5px)",
-//       backgroundColor: "rgba(255, 255, 255, 0.3)",
-      
-//     }}
-//     >
-//       {!sameSender && (
-//         <Typography color={lightBlue} fontWeight={"600"} variant="caption">
-//           {sender.name}
-//         </Typography>
-//       )}
-
-//       {content && <Typography>{content}</Typography>}
-
-//       {attachments.length > 0 &&
-//         attachments.map((attachment, index) => {
-//           const url = attachment.url;
-//           const file = fileFormat(url);
-
-//           return (
-//             <Box key={index}>
-//               <a
-//                 href={url}
-//                 target="_blank"
-//                 download
-//                 style={{
-//                   color: "black",
-//                 }}
-//               >
-//                 {RenderAttachment(file, url)}
-//               </a>
-//             </Box>
-//           );
-//         })}
-
-//       <Typography variant="caption" color={"text.secondary"}>
-//         {timeAgo}
-//       </Typography>
-//     </motion.div>
-//   );
-// };
-
-// export default memo(MessageComponent);
-
-
-
-
-
-
-import React, { memo } from "react";
+import React, { memo,  useState } from "react";
 import { Avatar, Box, IconButton, Paper, Stack, Typography, Tooltip } from "@mui/material";
 import { Reply as ReplyIcon } from "@mui/icons-material";
 import { grayColor, lightBlue } from "../../constants/color";
 import {  fileFormat } from "../../lib/features";
 import RenderAttachment from "./RenderAttachement.jsx";
 import { motion } from "framer-motion";
+import { BLOCK_USER } from "../../constants/events"
+import { getSocket } from "../../socket"
 import moment from "moment";
 
 const MessageComponent = ({ message, user, onReply }) => {
   const { sender, content, createdAt, replyTo, replyToMessage, attachments = [] } = message;
   const self = sender._id === user._id;
+  const [anchorEl, setAnchorEl] = useState(null)
+  const socket = getSocket()
+
+  const handleMenuOpen = (event) => {
+    setAnchorEl(event.currentTarget)
+  }
+
+  const handleMenuClose = () => {
+    setAnchorEl(null)
+  }
 
   const handleReply = () => {
     if (onReply) onReply(message);
   };
 
   const timeAgo = moment(createdAt).fromNow();
+
+  const handleBlockUser = () => {
+    // Only allow blocking other users, not yourself
+    if (message.sender._id !== user._id) {
+      socket.emit(BLOCK_USER, { userId: message.sender._id })
+      // You might want to show a confirmation toast or message here
+    }
+    handleMenuClose()
+  }
+
+  const isMyMessage = message.sender._id === user._id
 
   return (
     <motion.div
@@ -255,3 +205,4 @@ const MessageComponent = ({ message, user, onReply }) => {
 };
 
 export default memo(MessageComponent);
+
