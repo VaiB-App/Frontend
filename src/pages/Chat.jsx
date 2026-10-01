@@ -1765,9 +1765,17 @@ const Chat = ({ chatId, user }) => {
   }
 
   const messageOnChange = (e) => {
-    setMessage(e.target.value)
+    const nextMessage = e.target.value
+    setMessage(nextMessage)
+
+    console.log("[Typing] Message changed", {
+      chatId,
+      isTyping: IamTyping,
+      messageLength: nextMessage.length,
+    })
 
     if (!IamTyping) {
+      console.log("[Typing] Emitting START_TYPING", { chatId, members })
       socket.emit(START_TYPING, { members, chatId })
       setIamTyping(true)
     }
@@ -1775,9 +1783,10 @@ const Chat = ({ chatId, user }) => {
     if (typingTimeout.current) clearTimeout(typingTimeout.current)
 
     typingTimeout.current = setTimeout(() => {
+      console.log("[Typing] Emitting STOP_TYPING", { chatId, members })
       socket.emit(STOP_TYPING, { members, chatId })
       setIamTyping(false)
-    }, [2000])
+    }, 2000)
   }
 
   const handleFileOpen = (e) => {
@@ -2061,7 +2070,15 @@ const Chat = ({ chatId, user }) => {
 
   const startTypingListener = useCallback(
     (data) => {
-      if (data.chatId !== chatId) return
+      if (data.chatId !== chatId) {
+        console.log("[Typing] Ignored START_TYPING for another chat", {
+          eventChatId: data.chatId,
+          chatId,
+        })
+        return
+      }
+
+      console.log("[Typing] Received START_TYPING", data)
       setUserTyping(true)
     },
     [chatId,socket],
@@ -2069,7 +2086,15 @@ const Chat = ({ chatId, user }) => {
 
   const stopTypingListener = useCallback(
     (data) => {
-      if (data.chatId !== chatId) return
+      if (data.chatId !== chatId) {
+        console.log("[Typing] Ignored STOP_TYPING for another chat", {
+          eventChatId: data.chatId,
+          chatId,
+        })
+        return
+      }
+
+      console.log("[Typing] Received STOP_TYPING", data)
       setUserTyping(false)
     },
     [chatId,socket],
