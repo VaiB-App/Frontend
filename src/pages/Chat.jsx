@@ -1552,7 +1552,7 @@ import {
 } from "../constants/events"
 import UserActions from "../components/UserActions"
 import BlockedUsersList from "../components/BlockedUsersList"
-import ZegoCallModal from "../components/ZegoCallModal"
+import WebRTCCallModal from "../components/WebRTCCallModal"
 import ReplyPreview from "../components/ReplyPreview"
 import { useChatDetailsQuery, useGetMessagesQuery } from "../redux/api/api"
 import { useErrors, useSocketEvents } from "../hooks/hook"
@@ -1566,9 +1566,15 @@ import "../components/shared/MessageComponent.css"
 import { Block as BlockIcon } from "@mui/icons-material"
 import IncomingCallDialog from "../components/IncomingCallDialog"
 
-// ZEGOCLOUD configuration - replace with your actual credentials
-const ZEGO_APP_ID = 1387720586 // Replace with your ZEGO AppID
-const ZEGO_SERVER_SECRET = "21cbe217d360e26d76587ce864eae6e1" // Replace with your ZEGO ServerSecret
+const getUserId = (value) => {
+  if (value == null) return ""
+  const id = typeof value === "object" ? (value._id ?? value.id ?? value) : value
+  if (id == null) return ""
+  if (typeof id === "string") return id
+  if (typeof id.toString !== "function") return ""
+  const normalizedId = id.toString()
+  return normalizedId === "[object Object]" ? "" : normalizedId
+}
 
 const Chat = ({ chatId, user }) => {
   const socket = getSocket()
@@ -1596,14 +1602,12 @@ const Chat = ({ chatId, user }) => {
   const [blockedUsers, setBlockedUsers] = useState([])
   const [blockedUsersDialogOpen, setBlockedUsersDialogOpen] = useState(false)
 
-  // Call related states with ZEGOCLOUD
-  const [isCallActive, setIsCallActive] = useState(false)
-  const [isVideoCall, setIsVideoCall] = useState(false)
-  const [callRoomId, setCallRoomId] = useState("")
-
-  // Incoming call states
-  const [incomingCall, setIncomingCall] = useState(false)
+  const [activeCall, setActiveCall] = useState(null)
   const [incomingCallData, setIncomingCallData] = useState(null)
+  const activeCallRef = useRef(activeCall)
+  const incomingCallDataRef = useRef(incomingCallData)
+  activeCallRef.current = activeCall
+  incomingCallDataRef.current = incomingCallData
 
   // Inappropriate message dialog state
   const [inappropriateMessage, setInappropriateMessage] = useState(null)
@@ -1636,88 +1640,70 @@ const Chat = ({ chatId, user }) => {
 
   const members = chatDetails?.data?.chat?.members
 
-  // Handle voice call with ZEGOCLOUD
-  const handleVoiceCall = () => {
-    if (!members) return
-
-    // Generate a unique room ID for the call
-    const roomId = `call_${chatId}_${Date.now()}`
-    setCallRoomId(roomId)
-    setIsVideoCall(false)
-    setIsCallActive(true)
-
-    // Find the recipient (the other user in the chat)
-    const recipient = members.find((m) => m._id !== user._id)
-
-    // Notify the recipient about the call
-    socket.emit("zego-call-request", {
-      to: recipient._id,
-      from: user._id,
-      fromName: user.name,
-      roomId,
-      isVideo: false,
-      chatId,
-    })
-  }
-
-  // Handle video call with ZEGOCLOUD
-  const handleVideoCall = () => {
-    if (!members) return
-
-    // Generate a unique room ID for the call
-    const roomId = `call_${chatId}_${Date.now()}`
-    setCallRoomId(roomId)
-    setIsVideoCall(true)
-    setIsCallActive(true)
-
-    // Find the recipient (the other user in the chat)
-    const recipient = members.find((m) => m._id !== user._id)
-
-    // Notify the recipient about the call
-    socket.emit("zego-call-request", {
-      to: recipient._id,
-      from: user._id,
-      fromName: user.name,
-      roomId,
-      isVideo: true,
-      chatId,
-    })
-  }
-
-  // Handle end call
-  const handleEndCall = () => {
-    // Notify the other user that the call has ended
-    if (members && callRoomId) {
-      const recipient = members.find((m) => m._id == user._id)
-      if (recipient) {
-        socket.emit("zego-call-ended", {
-          to: recipient._id,
-          roomId: callRoomId, // send BEFORE resetting it
-        })
-      }
+  const startCall = (isVideo) => {
+    if (!members || activeCallRef.current || incomingCallDataRef.current) return
+    const currentUserId = getUserId(user)
+    if (!currentUserId) {
+      alert("Your user information is not ready. Please reload and try again.")
+      return
     }
 
-    // Reset state AFTER notifying
-    setIsCallActive(false)
-    setCallRoomId("")
+    const recipient = members.find((member) => {
+      const memberId = getUserId(member)
+      return memberId && memberId !== currentUserId
+    })
+    const recipientId = getUserId(recipient)
+    if (!recipientId) {
+      alert("Could not find the other person in this chat.")
+      return
+    }
+
+    const callId = globalThis.crypto?.randomUUID?.() || `call-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    const outgoingCall = {
+      callId,
+      peerId: recipientId,
+      peerName: typeof recipient === "object" ? (recipient.name || "User") : "User",
+      isVideo,
+      isCaller: true,
+      status: "calling",
+    }
+    activeCallRef.current = outgoingCall
+    setActiveCall(outgoingCall)
+    socket.emit("call:request", {
+      to: outgoingCall.peerId,
+      callId,
+      chatId,
+      isVideo,
+      fromName: user.name,
+    })
+  }
+
+  const handleVoiceCall = () => startCall(false)
+  const handleVideoCall = () => startCall(true)
+
+  const handleEndCall = (notifyPeer = true) => {
+    if (notifyPeer && activeCall) {
+      socket.emit("call:end", { to: activeCall.peerId, callId: activeCall.callId })
+    }
+    activeCallRef.current = null
+    setActiveCall(null)
   }
 
   // Handle accepting incoming call
   const handleAcceptCall = () => {
     if (!incomingCallData) return
-
-    setCallRoomId(incomingCallData.roomId)
-    setIsVideoCall(incomingCallData.isVideo)
-    setIsCallActive(true)
-
-    // Notify caller that call was accepted
-    socket.emit("zego-call-accepted", {
-      to: incomingCallData.from,
-      roomId: incomingCallData.roomId,
-    })
-
-    // Reset incoming call state
-    setIncomingCall(false)
+    const acceptedCall = {
+      callId: incomingCallData.callId,
+      peerId: incomingCallData.from,
+      peerName: incomingCallData.fromName,
+      isVideo: incomingCallData.isVideo,
+      isCaller: false,
+      status: "connected",
+    }
+    activeCallRef.current = acceptedCall
+    setActiveCall(acceptedCall)
+    socket.emit("call:accept", { to: incomingCallData.from, callId: incomingCallData.callId })
+    incomingCallDataRef.current = null
     setIncomingCallData(null)
   }
 
@@ -1725,14 +1711,8 @@ const Chat = ({ chatId, user }) => {
   const handleRejectCall = () => {
     if (!incomingCallData) return
 
-    // Notify caller that call was rejected
-    socket.emit("zego-call-rejected", {
-      to: incomingCallData.from,
-      roomId: incomingCallData.roomId,
-    })
-
-    // Reset incoming call state
-    setIncomingCall(false)
+    socket.emit("call:reject", { to: incomingCallData.from, callId: incomingCallData.callId })
+    incomingCallDataRef.current = null
     setIncomingCallData(null)
   }
 
@@ -1872,51 +1852,41 @@ const Chat = ({ chatId, user }) => {
     setBlockedMessageAlert(false)
   }
 
-  // Add ZEGOCLOUD call-related socket event handlers
+  // Socket.IO carries call invitations and WebRTC signaling between peers.
   useEffect(() => {
-    // Incoming call request
-    socket.on("zego-call-request", (data) => {
-      // If already in a call, automatically reject
-      if (isCallActive) {
-        socket.emit("zego-call-rejected", {
-          to: data.from,
-          roomId: data.roomId,
-        })
+    const incomingCallListener = (data) => {
+      if (activeCallRef.current || incomingCallDataRef.current) {
+        socket.emit("call:reject", { to: data.from, callId: data.callId, reason: "busy" })
         return
       }
+      incomingCallDataRef.current = data
+      setIncomingCallData(data)
+    }
+    const callAcceptedListener = (data) => {
+      if (activeCallRef.current?.callId !== data.callId) return
+      setActiveCall((call) => call?.callId === data.callId ? { ...call, status: "connected" } : call)
+    }
+    const callRejectedListener = (data) => {
+      if (activeCallRef.current?.callId !== data.callId) return
+      activeCallRef.current = null
+      setActiveCall(null)
+      alert(data.reason === "busy" ? "The other person is busy." : "The call was declined.")
+    }
+    const callEndedListener = (data) => {
+      if (activeCallRef.current?.callId === data.callId) {
+        activeCallRef.current = null
+        setActiveCall(null)
+      }
+      if (incomingCallDataRef.current?.callId === data.callId) {
+        incomingCallDataRef.current = null
+        setIncomingCallData(null)
+      }
+    }
 
-      // Show incoming call dialog
-      setIncomingCallData({
-        from: data.from,
-        fromName: data.fromName,
-        roomId: data.roomId,
-        isVideo: data.isVideo,
-      })
-      setIncomingCall(true)
-    })
-
-    // Call accepted
-    socket.on("zego-call-accepted", (data) => {
-      // Call was accepted, continue with the call
-      console.log("Call accepted", data)
-      // The call UI should already be showing
-    })
-
-    // Call rejected
-    socket.on("zego-call-rejected", (data) => {
-      // Call was rejected, close the call UI
-      setIsCallActive(false)
-      setCallRoomId("")
-      // Show rejection notification
-      alert("Call was rejected")
-    })
-
-    // Call ended
-    socket.on("zego-call-ended", (data) => {
-      setIsCallActive(false)
-      setCallRoomId("")
-      // Show call ended notification if needed
-    })
+    socket.on("call:request", incomingCallListener)
+    socket.on("call:accept", callAcceptedListener)
+    socket.on("call:reject", callRejectedListener)
+    socket.on("call:end", callEndedListener)
 
     // Add inappropriate message detection listener
     socket.on(INAPPROPRIATE_MESSAGE, (data) => {
@@ -1983,17 +1953,17 @@ const Chat = ({ chatId, user }) => {
     })
 
     return () => {
-      socket.off("zego-call-request")
-      socket.off("zego-call-accepted")
-      socket.off("zego-call-rejected")
-      socket.off("zego-call-ended")
+      socket.off("call:request", incomingCallListener)
+      socket.off("call:accept", callAcceptedListener)
+      socket.off("call:reject", callRejectedListener)
+      socket.off("call:end", callEndedListener)
       socket.off(INAPPROPRIATE_MESSAGE)
       socket.off(SPAM_DETECTED)
       socket.off(MESSAGE_BLOCKED)
       socket.off(MESSAGE_FROM_BLOCKED_USER)
       socket.off(USER_BLOCKED)
     }
-  }, [chatId, socket, isCallActive])
+  }, [chatId, socket])
 
   useEffect(() => {
     socket.emit(CHAT_JOINED, { userId: user._id, members })
@@ -2310,24 +2280,24 @@ const Chat = ({ chatId, user }) => {
           </Stack>
         </form>
 
-        {/* ZEGOCLOUD Call Modal */}
-        {isCallActive && (
-          <ZegoCallModal
-            open={isCallActive}
+        {activeCall && (
+          <WebRTCCallModal
+            socket={socket}
+            callId={activeCall.callId}
+            peerId={activeCall.peerId}
+            peerName={activeCall.peerName}
+            userId={getUserId(user)}
+            isVideo={activeCall.isVideo}
+            isCaller={activeCall.isCaller}
+            accepted={activeCall.status === "connected"}
             onClose={handleEndCall}
-            isVideo={isVideoCall}
-            roomID={callRoomId}
-            userID={user._id}
-            userName={user.name}
-            appID={ZEGO_APP_ID}
-            serverSecret={ZEGO_SERVER_SECRET}
           />
         )}
 
         {/* Incoming Call Dialog */}
-        {incomingCall && incomingCallData && (
+        {incomingCallData && (
           <IncomingCallDialog
-            open={incomingCall}
+            open={Boolean(incomingCallData)}
             caller={{
               _id: incomingCallData.from,
               name: incomingCallData.fromName,
