@@ -2064,7 +2064,7 @@ const Chat = ({ chatId, user }) => {
       if (data.chatId !== chatId) return
       setUserTyping(true)
     },
-    [chatId],
+    [chatId,socket],
   )
 
   const stopTypingListener = useCallback(
@@ -2072,7 +2072,7 @@ const Chat = ({ chatId, user }) => {
       if (data.chatId !== chatId) return
       setUserTyping(false)
     },
-    [chatId],
+    [chatId,socket],
   )
 
   const alertListener = useCallback(
