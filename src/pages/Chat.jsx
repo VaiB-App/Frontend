@@ -1522,7 +1522,7 @@
 
 "use client"
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import AppLayout from "../components/layout/AppLayout"
 
 import { IconButton, Skeleton, Stack } from "@mui/material"
@@ -2064,7 +2064,7 @@ const Chat = ({ chatId, user }) => {
       if (data.chatId !== chatId) return
       setUserTyping(true)
     },
-    [chatId],
+    [chatId,socket],
   )
 
   const stopTypingListener = useCallback(
@@ -2072,7 +2072,7 @@ const Chat = ({ chatId, user }) => {
       if (data.chatId !== chatId) return
       setUserTyping(false)
     },
-    [chatId],
+    [chatId,socket],
   )
 
   const alertListener = useCallback(
@@ -2093,13 +2093,13 @@ const Chat = ({ chatId, user }) => {
     [chatId],
   )
 
-  const eventHandler = {
+  const eventHandler = useMemo(() => ({
     [ALERT]: alertListener,
     [NEW_MESSAGE]: newMessagesListener,
     [REPLY_MESSAGE]: replyMessageListener,
     [START_TYPING]: startTypingListener,
     [STOP_TYPING]: stopTypingListener,
-  }
+  }), [alertListener, newMessagesListener, replyMessageListener, startTypingListener, stopTypingListener])
 
   useSocketEvents(socket, eventHandler)
 
