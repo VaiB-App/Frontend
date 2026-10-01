@@ -1560,7 +1560,6 @@ import { useInfiniteScrollTop } from "6pp"
 import { useDispatch } from "react-redux"
 import { setIsFileMenu } from "../redux/reducers/misc"
 import { removeNewMessagesAlert } from "../redux/reducers/chat"
-import { TypingLoader } from "../components/layout/Loaders"
 import { useNavigate } from "react-router-dom"
 import background from "./Wallpaper.jpeg"
 import "../components/shared/MessageComponent.css"
@@ -1587,9 +1586,10 @@ const Chat = ({ chatId, user }) => {
   // Reply state
   const [replyTo, setReplyTo] = useState(null)
 
-  const [IamTyping, setIamTyping] = useState(false)
   const [userTyping, setUserTyping] = useState(false)
   const typingTimeout = useRef(null)
+  const typingStateRef = useRef(false)
+  const incomingTypingTimeout = useRef(null)
   const [initialLoadComplete, setInitialLoadComplete] = useState(false)
 
   // Blocked users state
@@ -1770,14 +1770,14 @@ const Chat = ({ chatId, user }) => {
 
     console.log("[Typing] Message changed", {
       chatId,
-      isTyping: IamTyping,
+      isTyping: typingStateRef.current,
       messageLength: nextMessage.length,
     })
 
-    if (!IamTyping) {
+    if (!typingStateRef.current) {
       console.log("[Typing] Emitting START_TYPING", { chatId, members })
       socket.emit(START_TYPING, { members, chatId })
-      setIamTyping(true)
+      typingStateRef.current = true
     }
 
     if (typingTimeout.current) clearTimeout(typingTimeout.current)
@@ -1785,9 +1785,23 @@ const Chat = ({ chatId, user }) => {
     typingTimeout.current = setTimeout(() => {
       console.log("[Typing] Emitting STOP_TYPING", { chatId, members })
       socket.emit(STOP_TYPING, { members, chatId })
-      setIamTyping(false)
+      typingStateRef.current = false
     }, 2000)
   }
+
+  useEffect(() => {
+    // A pending stop belongs to the chat where typing began. Clear it when the
+    // user switches chats or leaves this screen.
+    typingStateRef.current = false
+    setUserTyping(false)
+    if (typingTimeout.current) clearTimeout(typingTimeout.current)
+    if (incomingTypingTimeout.current) clearTimeout(incomingTypingTimeout.current)
+
+    return () => {
+      if (typingTimeout.current) clearTimeout(typingTimeout.current)
+      if (incomingTypingTimeout.current) clearTimeout(incomingTypingTimeout.current)
+    }
+  }, [chatId])
 
   const handleFileOpen = (e) => {
     dispatch(setIsFileMenu(true))
@@ -2078,10 +2092,17 @@ const Chat = ({ chatId, user }) => {
         return
       }
 
+      if (data.senderId?.toString() === user?._id?.toString()) return
+
       console.log("[Typing] Received START_TYPING", data)
       setUserTyping(true)
+      if (incomingTypingTimeout.current) clearTimeout(incomingTypingTimeout.current)
+      incomingTypingTimeout.current = setTimeout(() => {
+        setUserTyping(false)
+        incomingTypingTimeout.current = null
+      }, 4000)
     },
-    [chatId,socket],
+    [chatId, socket, user?._id],
   )
 
   const stopTypingListener = useCallback(
@@ -2094,10 +2115,16 @@ const Chat = ({ chatId, user }) => {
         return
       }
 
+      if (data.senderId?.toString() === user?._id?.toString()) return
+
       console.log("[Typing] Received STOP_TYPING", data)
       setUserTyping(false)
+      if (incomingTypingTimeout.current) {
+        clearTimeout(incomingTypingTimeout.current)
+        incomingTypingTimeout.current = null
+      }
     },
-    [chatId,socket],
+    [chatId, socket, user?._id],
   )
 
   const alertListener = useCallback(
@@ -2196,7 +2223,7 @@ const Chat = ({ chatId, user }) => {
         </div>
 
         <Stack
-          height="90%"
+          height="88%"
           sx={{
             overflowX: "hidden",
             overflowY: "auto",
@@ -2208,14 +2235,12 @@ const Chat = ({ chatId, user }) => {
             </div>
           ))}
 
-          {userTyping && <TypingLoader color="white" />}
-
           <div ref={bottomRef} />
         </Stack>
 
         <form
           style={{
-            height: "10%",
+            height: "12%",
           }}
           onSubmit={submitHandler}
         >
@@ -2228,6 +2253,24 @@ const Chat = ({ chatId, user }) => {
               padding: "0.5rem",
             }}
           >
+            {userTyping && (
+              <div
+                role="status"
+                aria-live="polite"
+                style={{
+                  alignSelf: "flex-start",
+                  margin: "0.25rem 0.75rem",
+                  padding: "0.2rem 0.65rem",
+                  borderRadius: "999px",
+                  color: "#166534",
+                  background: "rgba(255,255,255,0.9)",
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                }}
+              >
+                Typing…
+              </div>
+            )}
             {/* Reply preview */}
             {replyTo && <ReplyPreview replyMessage={replyTo} onCancelReply={handleCancelReply} />}
 
