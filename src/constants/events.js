@@ -27,13 +27,6 @@ export const REPLY_MESSAGE = "reply-message"
 //export const MESSAGE_BLOCKED = "message-blocked"
 //export const INAPPROPRIATE_MESSAGE = "inappropriate-message"
 
-export const CALL_USER = "call-user"
-export const INCOMING_CALL = "incoming-call"
-export const CALL_ANSWERED = "call-answered"
-export const CALL_REJECTED = "call-rejected"
-export const ICE_CANDIDATE = "ice-candidate"
-export const END_CALL = "end-call"
-
 export const UNBLOCK_USER = "unblock-user"
 export const GET_BLOCKED_USERS = "get-blocked-users"
 
