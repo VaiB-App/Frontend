@@ -1641,6 +1641,7 @@ const Chat = ({ chatId, user }) => {
   const members = chatDetails?.data?.chat?.members
 
   const startCall = (isVideo) => {
+    console.log("[Call] Start requested", { isVideo, chatId, socketConnected: socket.connected, userId: getUserId(user), members })
     if (!members || activeCallRef.current || incomingCallDataRef.current) return
     const currentUserId = getUserId(user)
     if (!currentUserId) {
@@ -1669,6 +1670,7 @@ const Chat = ({ chatId, user }) => {
     }
     activeCallRef.current = outgoingCall
     setActiveCall(outgoingCall)
+    console.log("[Call] Emitting call:request", { to: outgoingCall.peerId, callId, chatId, isVideo })
     socket.emit("call:request", {
       to: outgoingCall.peerId,
       callId,
@@ -1855,6 +1857,7 @@ const Chat = ({ chatId, user }) => {
   // Socket.IO carries call invitations and WebRTC signaling between peers.
   useEffect(() => {
     const incomingCallListener = (data) => {
+      console.log("[Call] Received call:request", data)
       if (activeCallRef.current || incomingCallDataRef.current) {
         socket.emit("call:reject", { to: data.from, callId: data.callId, reason: "busy" })
         return
@@ -1863,16 +1866,20 @@ const Chat = ({ chatId, user }) => {
       setIncomingCallData(data)
     }
     const callAcceptedListener = (data) => {
+      console.log("[Call] Received call:accept", data)
       if (activeCallRef.current?.callId !== data.callId) return
+      activeCallRef.current = { ...activeCallRef.current, status: "connected" }
       setActiveCall((call) => call?.callId === data.callId ? { ...call, status: "connected" } : call)
     }
     const callRejectedListener = (data) => {
+      console.log("[Call] Received call:reject", data)
       if (activeCallRef.current?.callId !== data.callId) return
       activeCallRef.current = null
       setActiveCall(null)
       alert(data.reason === "busy" ? "The other person is busy." : "The call was declined.")
     }
     const callEndedListener = (data) => {
+      console.log("[Call] Received call:end", data)
       if (activeCallRef.current?.callId === data.callId) {
         activeCallRef.current = null
         setActiveCall(null)
@@ -1883,6 +1890,10 @@ const Chat = ({ chatId, user }) => {
       }
     }
 
+    socket.on("connect", () => console.log("[Call] Socket connected", { socketId: socket.id }))
+    socket.on("disconnect", (reason) => console.log("[Call] Socket disconnected", { reason }))
+    socket.on("connect_error", (error) => console.log("[Call] Socket connection error", error))
+    console.log("[Call] Registering signaling listeners", { chatId, socketConnected: socket.connected, socketId: socket.id })
     socket.on("call:request", incomingCallListener)
     socket.on("call:accept", callAcceptedListener)
     socket.on("call:reject", callRejectedListener)

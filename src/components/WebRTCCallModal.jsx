@@ -48,7 +48,14 @@ const WebRTCCallModal = ({
   onCloseRef.current = onClose
 
   useEffect(() => {
-    if (!accepted) return undefined
+    console.log("[Call Media] WebRTCCallModal mounted", { callId, accepted, isCaller, isVideo, peerId })
+  }, [accepted, callId, isCaller, isVideo, peerId])
+
+  useEffect(() => {
+    if (!accepted) {
+      console.log("[Call Media] Waiting for call acceptance", { callId, isCaller })
+      return undefined
+    }
 
     let disposed = false
     let pc
@@ -127,6 +134,7 @@ const WebRTCCallModal = ({
     }
 
     const start = async () => {
+      console.log("[Call Media] Starting media setup", { callId, isVideo, mediaDevicesAvailable: Boolean(navigator.mediaDevices), getUserMediaAvailable: Boolean(navigator.mediaDevices?.getUserMedia), secureContext: window.isSecureContext })
       try {
         // Attach signaling listeners before asking for media. Either browser
         // may grant permissions first, so the other peer's first signal must
@@ -164,6 +172,9 @@ const WebRTCCallModal = ({
             throw mediaError
           }
           setError("Your camera could not start. Joining with microphone only.")
+          console.log("[Call Media] Requesting microphone and camera", { audio: true, video: isVideo })
+          console.log("[Call Media] Permission states", await Promise.all(["microphone", "camera"].map(async (name) => { try { return { name, state: (await navigator.permissions?.query({ name }))?.state ?? "unavailable" } } catch (error) { return { name, error: error.message } } })))
+          console.log("[Call Media] Camera request failed; retrying with microphone only", { name: mediaError.name, message: mediaError.message, constraint: mediaError.constraint })
           stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
         }
         if (disposed) {
@@ -171,6 +182,7 @@ const WebRTCCallModal = ({
           return
         }
 
+        console.log("[Call Media] Media access succeeded", { audioTracks: stream.getAudioTracks().map((track) => ({ label: track.label, enabled: track.enabled, readyState: track.readyState })), videoTracks: stream.getVideoTracks().map((track) => ({ label: track.label, enabled: track.enabled, readyState: track.readyState })) })
         localStreamRef.current = stream
         setLocalStream(stream)
         stream.getTracks().forEach((track) => pc.addTrack(track, stream))
@@ -179,6 +191,7 @@ const WebRTCCallModal = ({
         setStatus(isCaller ? "Waiting for the other person…" : "Connecting…")
       } catch (mediaError) {
         console.error("Could not access call media", mediaError)
+        console.log("[Call Media] Media access failure details", { name: mediaError.name, message: mediaError.message, constraint: mediaError.constraint, isSecureContext: window.isSecureContext, mediaDevicesAvailable: Boolean(navigator.mediaDevices) })
         setError(mediaError.name === "NotAllowedError"
           ? "Allow microphone access in your browser to join the call."
           : mediaError.name === "NotFoundError"
