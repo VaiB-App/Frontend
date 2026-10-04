@@ -1621,7 +1621,8 @@ const Chat = ({ chatId, user }) => {
   const [blockedMessageAlert, setBlockedMessageAlert] = useState(false)
   const [blockedMessage, setBlockedMessage] = useState("")
 
-  const chatDetails = useChatDetailsQuery({ chatId, skip: !chatId })
+  // Call UI needs each participant's populated profile avatar.
+  const chatDetails = useChatDetailsQuery({ chatId, populate: true, skip: !chatId })
 
   const oldMessagesChunk = useGetMessagesQuery({ chatId, page })
 
@@ -1659,25 +1660,30 @@ const Chat = ({ chatId, user }) => {
       return
     }
 
+    const recipientAvatar = typeof recipient === "object" && recipient
+      ? (typeof recipient.avatar === "string" ? recipient.avatar : recipient.avatar?.url || "")
+      : ""
+    console.info("[Call Avatar] Resolved outgoing peer profile", {
+      peerId: recipientId,
+      peerName: recipient?.name || "User",
+      avatarPresent: Boolean(recipientAvatar),
+      avatarType: typeof recipient?.avatar,
+      avatarValue: recipient?.avatar,
+      resolvedAvatar: recipientAvatar,
+    })
+
     const callId = globalThis.crypto?.randomUUID?.() || `call-${Date.now()}-${Math.random().toString(16).slice(2)}`
     const outgoingCall = {
       callId,
       peerId: recipientId,
       peerName: typeof recipient === "object" ? (recipient.name || "User") : "User",
+      peerAvatar: recipientAvatar,
       isVideo,
       isCaller: true,
       status: "calling",
     }
     activeCallRef.current = outgoingCall
     setActiveCall(outgoingCall)
-    console.log("[Call] Emitting call:request", { to: outgoingCall.peerId, callId, chatId, isVideo })
-    socket.emit("call:request", {
-      to: outgoingCall.peerId,
-      callId,
-      chatId,
-      isVideo,
-      fromName: user.name,
-    })
   }
 
   const handleVoiceCall = () => startCall(false)
@@ -1694,10 +1700,17 @@ const Chat = ({ chatId, user }) => {
   // Handle accepting incoming call
   const handleAcceptCall = () => {
     if (!incomingCallData) return
+    console.info("[Call Avatar] Accepted incoming call profile", {
+      peerId: incomingCallData.from,
+      avatarPresent: Boolean(incomingCallData.fromAvatar),
+      fromAvatar: incomingCallData.fromAvatar,
+      payloadKeys: Object.keys(incomingCallData),
+    })
     const acceptedCall = {
       callId: incomingCallData.callId,
       peerId: incomingCallData.from,
       peerName: incomingCallData.fromName,
+      peerAvatar: incomingCallData.fromAvatar || "",
       isVideo: incomingCallData.isVideo,
       isCaller: false,
       status: "connected",
@@ -1858,6 +1871,12 @@ const Chat = ({ chatId, user }) => {
   useEffect(() => {
     const incomingCallListener = (data) => {
       console.log("[Call] Received call:request", data)
+      console.info("[Call Avatar] Received call profile", {
+        from: data.from,
+        fromAvatarPresent: Boolean(data.fromAvatar),
+        fromAvatar: data.fromAvatar,
+        payloadKeys: Object.keys(data),
+      })
       if (activeCallRef.current || incomingCallDataRef.current) {
         socket.emit("call:reject", { to: data.from, callId: data.callId, reason: "busy" })
         return
@@ -2319,10 +2338,31 @@ const Chat = ({ chatId, user }) => {
             callId={activeCall.callId}
             peerId={activeCall.peerId}
             peerName={activeCall.peerName}
+            peerAvatar={activeCall.peerAvatar}
             userId={getUserId(user)}
             isVideo={activeCall.isVideo}
             isCaller={activeCall.isCaller}
             accepted={activeCall.status === "connected"}
+            onReady={() => {
+              if (!activeCall.isCaller) return
+              console.info("[Call Avatar] Sending outgoing call profile", {
+                callId: activeCall.callId,
+                to: activeCall.peerId,
+                fromAvatarPresent: Boolean(typeof user.avatar === "string" ? user.avatar : user.avatar?.url),
+                fromAvatar: typeof user.avatar === "string" ? user.avatar : user.avatar?.url || "",
+                peerAvatarPresent: Boolean(activeCall.peerAvatar),
+                peerAvatar: activeCall.peerAvatar,
+              })
+              console.log("[Call] Emitting call:request", { to: activeCall.peerId, callId: activeCall.callId, chatId, isVideo: activeCall.isVideo })
+              socket.emit("call:request", {
+                to: activeCall.peerId,
+                callId: activeCall.callId,
+                chatId,
+                isVideo: activeCall.isVideo,
+                fromName: user.name,
+                fromAvatar: typeof user.avatar === "string" ? user.avatar : user.avatar?.url || "",
+              })
+            }}
             onClose={handleEndCall}
           />
         )}
