@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Dialog, IconButton } from "@mui/material"
-import { Mic, MicOff, MonitorUp, PhoneOff, Video, VideoOff } from "lucide-react"
+import { Maximize2, Mic, MicOff, Minimize2, MonitorUp, PhoneOff, UserRound, Video, VideoOff, Wifi } from "lucide-react"
+import "./WebRTCCallModal.css"
 
 const CALL_READY = "call:ready"
 const CALL_OFFER = "call:offer"
@@ -19,15 +20,55 @@ const getIceServers = () => {
   return [{ urls: "stun:stun.l.google.com:19302" }]
 }
 
+const ParticipantVideo = ({ name, videoRef, visible, local = false, status }) => {
+  const initials = name?.trim()?.slice(0, 1)?.toUpperCase() || "U"
+
+  return (
+    <section className="call-participant">
+      {visible ? (
+        <video
+          ref={videoRef}
+          autoPlay
+          muted={local}
+          playsInline
+          className={`call-participant__video ${local ? "call-participant__video--local" : ""}`}
+        />
+      ) : (
+        <div className="call-participant__placeholder">
+          <div className="call-participant__initials">
+            {initials}
+          </div>
+          <span className="call-muted">{status}</span>
+        </div>
+      )}
+
+      <div className="call-participant__caption">
+        <div className="call-participant__details">
+          <div className="call-participant__name">{name || "Participant"}</div>
+          <div className="call-participant__status">
+            <span className={`call-dot ${status === "Connected" ? "call-dot--connected" : "call-dot--waiting"}`} />
+            {status}
+          </div>
+        </div>
+        {local && <span className="call-you-tag">You</span>}
+      </div>
+    </section>
+  )
+}
+
+const formatDuration = (seconds) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`
+
 const WebRTCCallModal = ({
   socket,
   callId,
   peerId,
   peerName,
+  peerAvatar,
   userId,
   isVideo,
   isCaller,
   accepted,
+  onReady,
   onClose,
 }) => {
   const localVideoRef = useRef(null)
@@ -36,8 +77,12 @@ const WebRTCCallModal = ({
   const localStreamRef = useRef(null)
   const displayTrackRef = useRef(null)
   const onCloseRef = useRef(onClose)
+  const onReadyRef = useRef(onReady)
+  const readySentRef = useRef(false)
   const pendingIceRef = useRef([])
   const offerStartedRef = useRef(false)
+  const workspaceRef = useRef(null)
+  const callStartedAtRef = useRef(null)
   const [localStream, setLocalStream] = useState(null)
   const [remoteStream, setRemoteStream] = useState(null)
   const [status, setStatus] = useState("Waiting for answer…")
@@ -45,14 +90,62 @@ const WebRTCCallModal = ({
   const [muted, setMuted] = useState(false)
   const [cameraOff, setCameraOff] = useState(false)
   const [sharingScreen, setSharingScreen] = useState(false)
+  const [callDuration, setCallDuration] = useState(0)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false)
   onCloseRef.current = onClose
+  onReadyRef.current = onReady
+
+  useEffect(() => {
+    setAvatarLoadFailed(false)
+    console.info("[Call Avatar] Modal received peer profile", {
+      callId,
+      peerId,
+      peerName,
+      avatarPresent: Boolean(peerAvatar),
+      avatarType: typeof peerAvatar,
+      peerAvatar,
+    })
+  }, [callId, peerAvatar, peerId, peerName])
+
+  useEffect(() => {
+    if (status !== "Connected") return undefined
+    callStartedAtRef.current ||= Date.now()
+    const updateDuration = () => setCallDuration(Math.floor((Date.now() - callStartedAtRef.current) / 1000))
+    updateDuration()
+    const timer = window.setInterval(updateDuration, 1000)
+    return () => window.clearInterval(timer)
+  }, [status])
+
+  useEffect(() => {
+    const syncFullscreenState = () => setIsFullscreen(document.fullscreenElement === workspaceRef.current)
+    document.addEventListener("fullscreenchange", syncFullscreenState)
+    return () => document.removeEventListener("fullscreenchange", syncFullscreenState)
+  }, [])
+
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen()
+        setIsFullscreen(false)
+      } else if (workspaceRef.current?.requestFullscreen) {
+        await workspaceRef.current.requestFullscreen()
+        setIsFullscreen(true)
+      }
+    } catch (fullscreenError) {
+      console.error("Could not toggle call fullscreen", fullscreenError)
+    }
+  }
 
   useEffect(() => {
     console.log("[Call Media] WebRTCCallModal mounted", { callId, accepted, isCaller, isVideo, peerId })
   }, [accepted, callId, isCaller, isVideo, peerId])
 
   useEffect(() => {
-    if (!accepted) {
+    // Outgoing calls acquire media as soon as the call is placed, so browser
+    // permission prompts happen before the other person answers. Incoming
+    // calls still wait until the user accepts before opening their devices.
+    if (!accepted && !isCaller) {
       console.log("[Call Media] Waiting for call acceptance", { callId, isCaller })
       return undefined
     }
@@ -188,16 +281,21 @@ const WebRTCCallModal = ({
         stream.getTracks().forEach((track) => pc.addTrack(track, stream))
         if (!stream.getVideoTracks().length) pc.addTransceiver("video", { direction: "sendrecv" })
         send(CALL_READY, { userId })
+        if (isCaller && !readySentRef.current) {
+          readySentRef.current = true
+          onReadyRef.current?.()
+        }
         setStatus(isCaller ? "Waiting for the other person…" : "Connecting…")
       } catch (mediaError) {
         console.error("Could not access call media", mediaError)
         console.log("[Call Media] Media access failure details", { name: mediaError.name, message: mediaError.message, constraint: mediaError.constraint, isSecureContext: window.isSecureContext, mediaDevicesAvailable: Boolean(navigator.mediaDevices) })
         setError(mediaError.name === "NotAllowedError"
-          ? "Allow microphone access in your browser to join the call."
+          ? `Allow ${isVideo ? "microphone and camera" : "microphone"} access in your browser to place the call.`
           : mediaError.name === "NotFoundError"
             ? "No microphone was found. Connect a microphone and try again."
             : "Could not access your microphone. Check that it is connected and not in use by another app.")
         send(CALL_ENDED, { reason: "media-error" })
+        if (isCaller) onCloseRef.current(false)
       }
     }
 
@@ -218,8 +316,9 @@ const WebRTCCallModal = ({
       localStreamRef.current = null
       pendingIceRef.current = []
       offerStartedRef.current = false
+      readySentRef.current = false
     }
-  }, [accepted, callId, isCaller, isVideo, peerId, socket, userId])
+  }, [accepted, callId, isCaller, isVideo, onReady, peerId, socket, userId])
 
   useEffect(() => {
     if (localVideoRef.current && localStream) localVideoRef.current.srcObject = localStream
@@ -291,39 +390,126 @@ const WebRTCCallModal = ({
       open
       onClose={() => onClose(true)}
       fullWidth
-      maxWidth="md"
-      PaperProps={{ sx: { backgroundColor: "#111827", color: "white", borderRadius: 3, minHeight: isVideo ? "70vh" : "360px" } }}
+      maxWidth={false}
+      PaperProps={{
+        sx: {
+          width: { xs: "100vw", sm: "calc(100vw - 40px)" },
+          maxWidth: "1600px",
+          height: { xs: "100dvh", sm: "min(92dvh, 960px)" },
+          maxHeight: { xs: "100dvh", sm: "92dvh" },
+          m: { xs: 0, sm: 2 },
+          overflow: "hidden",
+          color: "white",
+          bgcolor: "#0b1117",
+          border: { xs: 0, sm: "1px solid rgba(255,255,255,0.1)" },
+          borderRadius: { xs: 0, sm: "20px" },
+          boxShadow: "0 32px 100px rgba(0,0,0,0.62), 0 0 70px rgba(63,111,130,0.08)",
+        },
+      }}
+      sx={{ "& .MuiDialog-container": { p: { xs: 0, sm: 1 } } }}
     >
-      <div className="flex h-full min-h-[360px] flex-col">
-        <div className="flex items-center justify-between bg-black/30 p-4">
-          <div className="font-medium">{isVideo ? "Video call" : "Voice call"} with {peerName}</div>
-          <div className="text-sm text-gray-300">{status}</div>
-        </div>
-        <div className="relative flex flex-1 items-center justify-center gap-3 overflow-hidden bg-gray-900 p-3">
-          {error ? <p role="alert" className="max-w-lg text-center text-red-300">{error}</p> : null}
-          <video ref={remoteVideoRef} autoPlay muted={!isVideo} playsInline className="h-full max-h-[55vh] w-full object-contain" />
-          {isVideo && (
-            <video ref={localVideoRef} autoPlay muted playsInline className="absolute bottom-4 right-4 max-h-36 w-1/4 rounded-lg bg-black object-cover" />
-          )}
-          {!isVideo && <audio ref={(node) => { if (node && remoteStream) node.srcObject = remoteStream }} autoPlay />}
-          {!localStream && !error && <p>Requesting microphone{isVideo ? " and camera" : ""}…</p>}
-        </div>
-        <div className="flex items-center justify-center gap-4 bg-black/30 p-4">
-          <IconButton aria-label={muted ? "Unmute microphone" : "Mute microphone"} onClick={toggleMute} sx={{ color: "white", bgcolor: muted ? "#b91c1c" : "#374151" }}>
-            {muted ? <MicOff /> : <Mic />}
-          </IconButton>
-          {isVideo && (
-            <IconButton aria-label={cameraOff ? "Turn camera on" : "Turn camera off"} onClick={toggleCamera} sx={{ color: "white", bgcolor: cameraOff ? "#b91c1c" : "#374151" }}>
-              {cameraOff ? <VideoOff /> : <Video />}
+      <div ref={workspaceRef} className={`call-workspace${isVideo ? " call-workspace--video" : " call-workspace--voice"}`}>
+        <header className="call-header">
+          <div className="call-header__identity">
+            <div className="call-header__icon">
+              {isVideo ? <Video size={19} /> : <Mic size={19} />}
+            </div>
+            <div className="call-header__titles">
+              <h2>{isVideo ? "Video call" : "Voice call"}</h2>
+              <div className="call-header__meta">
+                <span>You and {peerName || "Participant"}</span><span aria-hidden="true">·</span><span>2 participants</span>
+                {status === "Connected" && <><span aria-hidden="true">·</span><span className="call-duration">{formatDuration(callDuration)}</span></>}
+              </div>
+            </div>
+          </div>
+          <div className="call-header__actions">
+            <div className="call-network-status">
+              <Wifi size={14} className={status === "Connected" ? "call-icon-connected" : "call-icon-waiting"} />
+              {status}
+            </div>
+            <IconButton aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={toggleFullscreen} sx={{ width: 40, height: 40, color: "#c3d0d8", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "50%", backgroundColor: "rgba(255,255,255,0.06)", "&:hover": { color: "white", bgcolor: "rgba(255,255,255,0.12)" } }}>
+              {isFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
             </IconButton>
-          )}
-          <IconButton aria-label={sharingScreen ? "Stop screen sharing" : "Share screen"} onClick={toggleScreenShare} sx={{ color: "white", bgcolor: sharingScreen ? "#047857" : "#374151" }}>
-            <MonitorUp />
-          </IconButton>
-          <IconButton aria-label="End call" onClick={() => onClose(true)} sx={{ color: "white", bgcolor: "#b91c1c" }}>
-            <PhoneOff />
-          </IconButton>
-        </div>
+          </div>
+        </header>
+
+        {isVideo ? (
+          <main className="call-video-grid">
+            <ParticipantVideo name="You" videoRef={localVideoRef} visible={Boolean(localStream?.getVideoTracks().some((track) => track.enabled) && !cameraOff)} local status={status === "Connected" ? "Connected" : status} />
+            <ParticipantVideo name={peerName} videoRef={remoteVideoRef} visible={Boolean(remoteStream?.getVideoTracks().some((track) => track.readyState === "live"))} status={remoteStream ? status : "Waiting for video…"} />
+          </main>
+        ) : (
+          <main className="call-voice-stage">
+            <div className="call-orbit call-orbit--outer" />
+            <div className="call-orbit call-orbit--inner" />
+            <div className={`call-avatar${peerAvatar && !avatarLoadFailed ? " call-avatar--photo" : ""}`}>
+              {peerAvatar && !avatarLoadFailed ? (
+                <img
+                  className="call-avatar__image"
+                  src={peerAvatar}
+                  alt={`${peerName || "User"} profile`}
+                  onLoad={(event) => console.info("[Call Avatar] Profile image loaded", {
+                    callId,
+                    peerId,
+                    currentSrc: event.currentTarget.currentSrc,
+                    naturalWidth: event.currentTarget.naturalWidth,
+                    naturalHeight: event.currentTarget.naturalHeight,
+                  })}
+                  onError={(event) => {
+                    console.error("[Call Avatar] Profile image failed to load", {
+                      callId,
+                      peerId,
+                      src: event.currentTarget.src,
+                    })
+                    setAvatarLoadFailed(true)
+                  }}
+                />
+              ) : <UserRound className="call-avatar__icon" strokeWidth={1.35} />}
+              <span className="call-avatar__ring" />
+            </div>
+            <h3 className="call-peer-name">{peerName || "Participant"}</h3>
+            <p className="call-peer-status">
+              <span className={`call-dot ${status === "Connected" ? "call-dot--connected" : "call-dot--waiting"}`} />
+              {status === "Connected" ? `Connected · ${formatDuration(callDuration)}` : isCaller ? "Ringing…" : "Connecting…"}
+            </p>
+            <div className="call-waveform" aria-hidden="true">
+              {[8, 13, 19, 11, 25, 15, 32, 18, 10, 23, 14, 8].map((height, index) => (
+                <span key={index} style={{ height, animationDelay: `${index * 75}ms` }} />
+              ))}
+            </div>
+            {status !== "Connected" && <p className="call-waiting-copy">Waiting for {peerName || "them"} to answer</p>}
+            <div className="call-local-status">
+              <span className="call-local-status__you">You</span><span aria-hidden="true">·</span>{muted ? "Microphone muted" : "Microphone on"}
+            </div>
+          </main>
+        )}
+
+        {error && <div role="alert" className="call-error">{error}</div>}
+        {!localStream && !error && <div className="call-requesting">Requesting microphone{isVideo ? " and camera" : ""}…</div>}
+        {!isVideo && <audio ref={(node) => { if (node && remoteStream) node.srcObject = remoteStream }} autoPlay />}
+
+        <footer className="call-footer">
+          <div className="call-controls">
+            <div className="call-control-item">
+              <IconButton aria-label={muted ? "Unmute microphone" : "Mute microphone"} title={muted ? "Unmute microphone" : "Mute microphone"} onClick={toggleMute} sx={{ width: 54, height: 54, color: muted ? "#fda4af" : "#e1e9ef", bgcolor: muted ? "rgba(190,45,63,0.25)" : "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.08)", "&:hover": { bgcolor: muted ? "rgba(190,45,63,0.36)" : "rgba(255,255,255,0.14)" } }}>
+                {muted ? <MicOff size={19} /> : <Mic size={19} />}
+              </IconButton>
+              <span>{muted ? "Unmute" : "Mute"}</span>
+            </div>
+            {isVideo && <div className="call-control-item"><IconButton aria-label={cameraOff ? "Turn camera on" : "Turn camera off"} title={cameraOff ? "Turn camera on" : "Turn camera off"} onClick={toggleCamera} sx={{ width: 54, height: 54, color: cameraOff ? "#fda4af" : "#e1e9ef", bgcolor: cameraOff ? "rgba(190,45,63,0.25)" : "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.08)", "&:hover": { bgcolor: "rgba(255,255,255,0.14)" } }}>
+              {cameraOff ? <VideoOff size={19} /> : <Video size={19} />}
+            </IconButton><span>{cameraOff ? "Start video" : "Camera"}</span></div>}
+            <div className="call-control-item">
+              <IconButton aria-label={sharingScreen ? "Stop screen sharing" : "Share screen"} title={sharingScreen ? "Stop screen sharing" : "Share screen"} onClick={toggleScreenShare} sx={{ width: 54, height: 54, color: sharingScreen ? "#7dd3c7" : "#e1e9ef", bgcolor: sharingScreen ? "rgba(25,125,110,0.2)" : "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.08)", "&:hover": { bgcolor: "rgba(255,255,255,0.14)" } }}>
+                <MonitorUp size={19} />
+              </IconButton><span>{sharingScreen ? "Stop share" : "Share"}</span>
+            </div>
+            <span className="call-control-divider" />
+            <div className="call-control-item"><IconButton aria-label="End call" title="End call" onClick={() => onClose(true)} sx={{ width: 62, height: 54, color: "white", bgcolor: "#e5394d", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "18px", "&:hover": { bgcolor: "#f04b5d", boxShadow: "0 6px 22px rgba(216,67,80,0.26)" } }}>
+              <PhoneOff size={20} />
+            </IconButton><span>End call</span></div>
+          </div>
+        </footer>
       </div>
     </Dialog>
   )
