@@ -1,7 +1,7 @@
 
 import React, { memo,  useState } from "react";
 import { Avatar, Box, IconButton, Paper, Stack, Typography, Tooltip } from "@mui/material";
-import { Reply as ReplyIcon } from "@mui/icons-material";
+import { Call as CallIcon, Videocam as VideoCallIcon, Reply as ReplyIcon } from "@mui/icons-material";
 import { grayColor, lightBlue } from "../../constants/color";
 import {  fileFormat } from "../../lib/features";
 import RenderAttachment from "./RenderAttachement.jsx";
@@ -40,6 +40,41 @@ const MessageComponent = ({ message, user, onReply }) => {
   }
 
   const isMyMessage = message.sender._id === user._id
+
+  if (message.type === "call") {
+    const callLabel = message.call?.isVideo ? "Video call" : "Voice call"
+    const wasMissed = message.call?.status === "missed"
+    const duration = Number(message.call?.durationSeconds || 0)
+    const durationLabel = `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, "0")}`
+
+    return (
+      <Box sx={{ display: "flex", justifyContent: "center", width: "100%", my: 0.5 }}>
+        <Paper
+          elevation={0}
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            px: 1.5,
+            py: 1,
+            borderRadius: 3,
+            bgcolor: "rgba(255,255,255,0.9)",
+            color: wasMissed ? "error.main" : "text.secondary",
+          }}
+        >
+          {message.call?.isVideo ? <VideoCallIcon fontSize="small" /> : <CallIcon fontSize="small" />}
+          <Box>
+            <Typography variant="body2" fontWeight={600}>
+              {wasMissed ? `Missed ${callLabel.toLowerCase()}` : callLabel}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {message.call?.status === "completed" ? `Duration ${durationLabel} · ` : ""}{timeAgo}
+            </Typography>
+          </Box>
+        </Paper>
+      </Box>
+    )
+  }
 
   return (
     <motion.div

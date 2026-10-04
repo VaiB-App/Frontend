@@ -1527,7 +1527,7 @@ import AppLayout from "../components/layout/AppLayout"
 
 import { IconButton, Skeleton, Stack } from "@mui/material"
 import { grayColor } from "../constants/color"
-import { AttachFile as AttachFileIcon, Send as SendIcon } from "@mui/icons-material"
+import { AttachFile as AttachFileIcon, Call as CallIcon, Send as SendIcon, Videocam as VideoCallIcon } from "@mui/icons-material"
 import { InputBox } from "../components/styles/StyledComponents"
 import FileMenu from "../components/dialogs/FileMenu"
 import MessageComponent from "../components/shared/MessageComponent"
@@ -1880,13 +1880,13 @@ const Chat = ({ chatId, user }) => {
     }
     const callEndedListener = (data) => {
       console.log("[Call] Received call:end", data)
-      if (activeCallRef.current?.callId === data.callId) {
-        activeCallRef.current = null
-        setActiveCall(null)
-      }
       if (incomingCallDataRef.current?.callId === data.callId) {
         incomingCallDataRef.current = null
         setIncomingCallData(null)
+      }
+      if (activeCallRef.current?.callId === data.callId) {
+        activeCallRef.current = null
+        setActiveCall(null)
       }
     }
 
@@ -2211,9 +2211,31 @@ const Chat = ({ chatId, user }) => {
           }}
         >
           {processedMessages.map((message) => (
-            <div key={message._id} className="message-container">
-              <MessageComponent message={message} user={user} onReply={handleReplyToMessage} />
-            </div>
+            message.type === "call" ? (
+              <div key={message._id} className="message-container" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderRadius: 16, background: "rgba(255,255,255,0.92)", color: message.call?.status === "missed" ? "#d32f2f" : "#475569" }}>
+                  {message.call?.isVideo ? <VideoCallIcon fontSize="small" /> : <CallIcon fontSize="small" />}
+                  <div>
+                    <div style={{ fontWeight: 600 }}>
+                      {message.call?.status === "missed"
+                        ? `Missed ${message.call?.isVideo ? "video" : "voice"} call`
+                        : `${message.call?.isVideo ? "Video" : "Voice"} call`}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#64748b" }}>
+                      {message.call?.status === "completed" && (() => {
+                        const seconds = Number(message.call.durationSeconds || 0)
+                        return `Duration ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} · `
+                      })()}
+                      {new Date(message.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div key={message._id} className="message-container">
+                <MessageComponent message={message} user={user} onReply={handleReplyToMessage} />
+              </div>
+            )
           ))}
 
           <div ref={bottomRef} />
